@@ -1,0 +1,85 @@
+version: '3.9'
+
+services:
+  db_postgres:
+    image: postgres:14-alpine
+    container_name: postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: mock_data
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - net
+  
+  db_clickhouse:
+    image: clickhouse/clickhouse-server:23.3
+    container_name: db_clickhouse
+    ports:
+      - "8123:8123"  
+      - "9000:9000" 
+    volumes:
+      - ./ch-config/users.xml:/etc/clickhouse-server/users.xml
+      - chdata:/var/lib/clickhouse
+    networks:
+      - net
+
+  # Apache Spark Master
+  spark_master:
+    image: bitnami/spark:3.4.1
+    container_name: spark_master
+    environment:
+      - SPARK_MODE=master
+      - SPARK_RPC_AUTHENTICATION_ENABLED=no
+      - SPARK_RPC_ENCRYPTION_ENABLED=no
+      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
+      - SPARK_SSL_ENABLED=no
+    ports:
+      - "8081:8080"  
+      - "7077:7077"  
+    networks:
+      - net
+
+  spark_worker:
+    image: bitnami/spark:3.4.1
+    container_name: spark_worker
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark_master:7077
+      - SPARK_WORKER_MEMORY=3G
+      - SPARK_WORKER_CORES=3
+      - SPARK_RPC_AUTHENTICATION_ENABLED=no
+      - SPARK_RPC_ENCRYPTION_ENABLED=no
+      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
+      - SPARK_SSL_ENABLED=no
+    depends_on:
+      - spark_master
+    networks:
+      - net
+
+  jupyter:
+    image: jupyter/pyspark-notebook:2023-10-20
+    container_name: jupyter
+    environment:
+      - SPARK_MASTER=spark://spark_master:7077
+      - JUPYTER_ENABLE_LAB=yes
+    ports:
+      - "8890:8888"  
+    volumes:
+      - ./nb:/home/jovyan/work  
+    depends_on:
+      - spark_master
+      - db_postgres
+    networks:
+      - net
+
+volumes:
+  pgdata:
+  chdata:
+
+networks:
+  net:
+    driver: bridge
